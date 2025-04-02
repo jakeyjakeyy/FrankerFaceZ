@@ -1402,12 +1402,39 @@ export default class EmoteMenu extends Module {
 
 				if ( tab === 'effect' )
 					this.seeEffects();
+                
+				// Refresh recent emotes when that tab is selected
+				if ( tab === 'recent' ) {
+					const recent_emotes = this.loadRecentEmotes();
+					if (recent_emotes.length > 0) {
+						this.setState(prevState => {
+							const recent_sets = [{
+								key: 'recent',
+								sort_key: -5,
+								icon: 'clock',
+								title: 'Recently Used',
+								i18n: 'emote-menu.recent',
+								source: '',
+								emotes: recent_emotes
+							}];
+							
+							return {
+								recent_sets,
+								filtered_recent_sets: this.filterSets(prevState.filter, recent_sets, prevState.visibility_control),
+								has_recent_tab: true
+							};
+						});
+					}
+				}
 
 				if ( this.state.combineTabs ) {
 					let sets;
 					switch(tab) {
 						case 'fav':
 							sets = this.state.filtered_fav_sets;
+							break;
+						case 'recent':
+							sets = this.state.filtered_recent_sets;
 							break;
 						case 'channel':
 							sets = this.state.filtered_channel_sets;
@@ -1591,6 +1618,51 @@ export default class EmoteMenu extends Module {
 				return true;
 			}
 
+			loadRecentEmotes() {
+				try {
+					const history = localStorage.getItem('twilight.emote_picker_history');
+					if (!history) return [];
+
+					const historyData = JSON.parse(history);
+					if (!historyData) return [];
+
+					// Convert to array and sort by most recently used
+					const entries = Object.values(historyData).sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
+					const emotes = [];
+					const seen = new Set();
+
+					for (const entry of entries) {
+						if (!entry?.emote?.id || seen.has(entry.emote.id)) continue;
+						seen.add(entry.emote.id);
+
+						const emote = entry.emote;
+						const provider = 'twitch';
+						const is_emoji = false; // Currently only Twitch emotes are in history
+
+						// Build the emote object
+						const emoteObj = {
+							provider,
+							id: emote.id,
+							name: emote.token,
+							set_id: emote.setID || '0',
+							favorite: t.emotes.getFavorites('twitch').includes(emote.id),
+							hidden: t.emotes.getHidden('twitch').includes(emote.id),
+							src: getTwitchEmoteURL(emote.id, 1, false),
+							srcSet: getTwitchEmoteSrcSet(emote.id, false),
+							animSrc: getTwitchEmoteURL(emote.id, 1, true),
+							animSrcSet: getTwitchEmoteSrcSet(emote.id, true)
+						};
+
+						emotes.push(emoteObj);
+					}
+					console.log('Loaded recent emotes from history:', emotes);
+					return emotes;
+				} catch (err) {
+					console.log('Error loading recent emotes from history:', err);
+					return [];
+				}
+			}
+
 			filterState(input, old_state, visibility_control) {
 				const state = Object.assign({}, old_state);
 
@@ -1607,8 +1679,10 @@ export default class EmoteMenu extends Module {
 				state.filtered_all_sets = this.filterSets(input, state.all_sets, visibility_control);
 				state.filtered_fav_sets = this.filterSets(input, state.fav_sets, visibility_control);
 				state.filtered_emoji_sets = this.filterSets(input, state.emoji_sets, visibility_control);
+				state.filtered_recent_sets = this.filterSets(input, state.recent_sets, visibility_control);
 
 				state.has_effect_tab = state.filtered_effect_sets.length > 0;
+				state.has_recent_tab = state.filtered_recent_sets?.length > 0;
 
 				return state;
 			}
@@ -1858,6 +1932,21 @@ export default class EmoteMenu extends Module {
 					is_following = user && user.self?.follower != null,
 					follower_locked = ! is_following && (props.user_id && user?.id != props.user_id),
 					bits = user?.cheer?.badgeTierEmotes;
+                
+				// Process recently used emotes from localStorage
+				const recent_emotes = this.loadRecentEmotes();
+				
+				state.recent_sets = [{
+						key: 'recent',
+						sort_key: -5,
+						icon: 'clock',
+						title: 'Recently Used',
+						i18n: 'emote-menu.recent',
+						source: '',
+						emotes: recent_emotes
+				}];
+				
+				state.has_recent_tab = recent_emotes.length > 0;
 
 				const follower_sets = new Set();
 				if ( Array.isArray(local_sets) )
@@ -2696,11 +2785,12 @@ export default class EmoteMenu extends Module {
 				if ( ! loading )
 					this.loadedOnce = true;
 
-				let tab, sets, is_emoji, is_favs, is_effect;
+				let tab, sets, is_emoji, is_favs, is_effect, is_recent;
 
 				if ( no_tabs ) {
 					sets = [
 						this.state.filtered_fav_sets,
+						this.state.filtered_recent_sets,
 						this.state.filtered_channel_sets,
 						this.state.filtered_effect_sets,
 						this.state.filtered_all_sets,
@@ -2709,16 +2799,23 @@ export default class EmoteMenu extends Module {
 
 				} else {
 					tab = this.state.tab || t.chat.context.get('chat.emote-menu.default-tab');
-					if ( (tab === 'effect' && ! this.state.has_effect_tab) || (tab === 'channel' && ! this.state.has_channel_tab) || (tab === 'emoji' && ! this.state.has_emoji_tab) )
+					if ( (tab === 'effect' && ! this.state.has_effect_tab) || 
+						 (tab === 'channel' && ! this.state.has_channel_tab) || 
+						 (tab === 'emoji' && ! this.state.has_emoji_tab) ||
+						 (tab === 'recent' && ! this.state.has_recent_tab) )
 						tab = 'all';
 
 					is_emoji = tab === 'emoji';
 					is_favs = tab === 'fav';
 					is_effect = tab === 'effect';
+					is_recent = tab === 'recent';
 
 					switch(tab) {
 						case 'fav':
 							sets = this.state.filtered_fav_sets;
+							break;
+						case 'recent':
+							sets = this.state.filtered_recent_sets;
 							break;
 						case 'channel':
 							sets = this.state.filtered_channel_sets;
@@ -2888,6 +2985,20 @@ export default class EmoteMenu extends Module {
 												</div>
 											</button>
 										</div>}
+										<div class={`emote-picker-tab-item${tab === 'recent' ? ' emote-picker-tab-item--active' : ''} tw-relative`}>
+											<button
+												class={`ffz-tooltip tw-block tw-full-width ffz-interactable ffz-interactable--hover-enabled ffz-interactable--default tw-interactive${tab === 'recent' ? ' ffz-interactable--selected' : ''}`}
+												id="emote-picker__recent"
+												data-tab="recent"
+												data-tooltip-type="html"
+												data-title={t.i18n.t('emote-menu.recent', 'Recently Used')}
+												onClick={this.clickTab}
+											>
+												<div class="tw-inline-flex tw-pd-x-1 tw-pd-y-05 tw-font-size-4">
+													<figure class="ffz-i-clock" />
+												</div>
+											</button>
+										</div>
 										{this.state.has_channel_tab && <div class={`emote-picker-tab-item${tab === 'channel' ? ' emote-picker-tab-item--active' : ''} tw-relative`}>
 											<button
 												class={`ffz-tooltip tw-block tw-full-width ffz-interactable ffz-interactable--hover-enabled ffz-interactable--default tw-interactive${tab === 'channel' ? ' ffz-interactable--selected' : ''}`}
