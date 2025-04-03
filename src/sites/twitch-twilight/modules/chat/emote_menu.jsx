@@ -393,6 +393,18 @@ export default class EmoteMenu extends Module {
 			}
 		});
 
+		this.settings.add('chat.emote-menu.sort-recent', {
+			default: 0,
+			ui: {
+				path: 'Chat > Emote Menu >> Sorting',
+				title: 'Sort Recently Used By',
+				component: 'setting-select-box',
+				data: [
+					{value: 0, title: 'Most Frequent'},
+					{value: 1, title: 'Most Recent'},
+				]
+			}
+		})
 
 		this.EmoteMenu = this.fine.define(
 			'chat-emote-menu',
@@ -433,6 +445,7 @@ export default class EmoteMenu extends Module {
 		this.chat.context.on('changed:chat.emote-menu.effect-tab', rebuild);
 		this.chat.context.on('changed:chat.emote-menu.sort-emotes', rebuild);
 		this.chat.context.on('changed:chat.emote-menu.sort-tiers-last', rebuild);
+		this.chat.context.on('changed:chat.emote-menu.sort-recent', rebuild);
 
 		this.chat.context.on('changed:chat.emoji.style', this.updateEmojiVariables, this);
 
@@ -1626,8 +1639,16 @@ export default class EmoteMenu extends Module {
 					const historyData = JSON.parse(history);
 					if (!historyData) return [];
 
-					// Convert to array and sort by most recently used
-					const entries = Object.values(historyData).sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
+					const entries = Object.values(historyData);
+					switch (t.chat.context.get('chat.emote-menu.sort-recent')) {
+						case 1:
+							entries.sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
+							break;
+						case 0:
+						default:
+							entries.sort((a, b) => b.uses - a.uses);
+					}
+
 					const emotes = [];
 					const seen = new Set();
 
@@ -1639,7 +1660,6 @@ export default class EmoteMenu extends Module {
 						const provider = 'twitch';
 						const is_emoji = false; // Currently only Twitch emotes are in history
 
-						// Build the emote object
 						const emoteObj = {
 							provider,
 							id: emote.id,
@@ -1655,7 +1675,6 @@ export default class EmoteMenu extends Module {
 
 						emotes.push(emoteObj);
 					}
-					console.log('Loaded recent emotes from history:', emotes);
 					return emotes;
 				} catch (err) {
 					console.log('Error loading recent emotes from history:', err);
@@ -2985,20 +3004,20 @@ export default class EmoteMenu extends Module {
 												</div>
 											</button>
 										</div>}
-										<div class={`emote-picker-tab-item${tab === 'recent' ? ' emote-picker-tab-item--active' : ''} tw-relative`}>
+										{this.state.has_recent_tab && <div class={`emote-picker-tab-item${tab === 'recent' ? ' emote-picker-tab-item--active' : ''} tw-relative`}>
 											<button
 												class={`ffz-tooltip tw-block tw-full-width ffz-interactable ffz-interactable--hover-enabled ffz-interactable--default tw-interactive${tab === 'recent' ? ' ffz-interactable--selected' : ''}`}
 												id="emote-picker__recent"
 												data-tab="recent"
 												data-tooltip-type="html"
-												data-title={t.i18n.t('emote-menu.recent', 'Recently Used')}
+												data-title={t.i18n.t('emote-menu.recent', 'Emote History')}
 												onClick={this.clickTab}
 											>
 												<div class="tw-inline-flex tw-pd-x-1 tw-pd-y-05 tw-font-size-4">
 													<figure class="ffz-i-clock" />
 												</div>
 											</button>
-										</div>
+										</div>}
 										{this.state.has_channel_tab && <div class={`emote-picker-tab-item${tab === 'channel' ? ' emote-picker-tab-item--active' : ''} tw-relative`}>
 											<button
 												class={`ffz-tooltip tw-block tw-full-width ffz-interactable ffz-interactable--hover-enabled ffz-interactable--default tw-interactive${tab === 'channel' ? ' ffz-interactable--selected' : ''}`}
